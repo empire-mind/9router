@@ -8,6 +8,9 @@ function defaultDir() {
   if (process.platform === "win32") {
     return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
   }
+  if (process.env.VERCEL) {
+    return path.join(os.tmpdir(), APP_NAME);
+  }
   return path.join(os.homedir(), `.${APP_NAME}`);
 }
 

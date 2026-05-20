@@ -1048,6 +1048,21 @@ pm2 save
 pm2 startup
 ```
 
+#### 1Password secret references
+
+Runtime secrets can also be provided as 1Password secret references. Keep the
+reference in environment/config, and 9Router resolves it with `op read` at
+runtime without writing the secret value to disk.
+
+```bash
+export JWT_SECRET="op://Shared/9router Studio Runtime/JWT_SECRET"
+export API_KEY_SECRET="op://Shared/9router Studio Runtime/API_KEY_SECRET"
+export OP_CLI_PATH="$(command -v op)"
+```
+
+Provider API key fields can also store an `op://vault/item/field` reference;
+the router resolves it server-side before calling the upstream provider.
+
 ### Docker
 
 Published images (multi-platform `linux/amd64` + `linux/arm64`):
