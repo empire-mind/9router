@@ -1,7 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -26,6 +26,91 @@ const NINE_ROUTER_API_KEY_REF = {
   id: "NINE_ROUTER_API_KEY",
 };
 
+const timestamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "T");
+
+const backupFile = async (filePath) => {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    const backupPath = `${filePath}.bak-${timestamp()}`;
+    await fs.writeFile(backupPath, content, { mode: 0o600 });
+    return backupPath;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+};
+
+const ensureDefaultModelObject = (defaults) => {
+  if (typeof defaults.model === "string") {
+    defaults.model = { primary: defaults.model };
+  } else if (!defaults.model || typeof defaults.model !== "object" || Array.isArray(defaults.model)) {
+    defaults.model = {};
+  }
+};
+
+const remove9RouterAgentModel = (agent) => {
+  if (typeof agent.model === "string") {
+    if (!agent.model.startsWith("9router/")) return agent;
+    const { model: _, ...rest } = agent;
+    return rest;
+  }
+
+  if (agent.model && typeof agent.model === "object" && !Array.isArray(agent.model)) {
+    const nextModel = { ...agent.model };
+    if (typeof nextModel.primary === "string" && nextModel.primary.startsWith("9router/")) {
+      delete nextModel.primary;
+    }
+    if (Object.keys(nextModel).length === 0) {
+      const { model: _, ...rest } = agent;
+      return rest;
+    }
+    return { ...agent, model: nextModel };
+  }
+
+  return agent;
+};
+
+const parseJsonOutput = (stdout) => {
+  const trimmed = String(stdout || "").trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const line = trimmed.split(/\r?\n/).reverse().find((entry) => entry.trim().startsWith("{"));
+    return line ? JSON.parse(line) : null;
+  }
+};
+
+const runOpenClawConfigDryRun = (patch) => new Promise((resolve, reject) => {
+  const child = spawn("openclaw", ["config", "patch", "--stdin", "--dry-run", "--json", "--allow-exec"], {
+    env: process.env,
+    windowsHide: true,
+  });
+  let stdout = "";
+  let stderr = "";
+
+  child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+  child.on("error", reject);
+  child.on("close", (code) => {
+    if (code !== 0) {
+      reject(new Error((stderr || stdout || `openclaw config patch failed with code ${code}`).trim()));
+      return;
+    }
+    try {
+      const result = parseJsonOutput(stdout);
+      if (result && (result.schema === false || result.resolvability === false || result.resolvabilityComplete === false)) {
+        reject(new Error(`OpenClaw dry-run failed: ${JSON.stringify(result)}`));
+        return;
+      }
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    }
+  });
+  child.stdin.end(JSON.stringify(patch));
+});
+
 // Check if openclaw CLI is installed (via which/where or config file exists)
 const checkOpenClawInstalled = async () => {
   try {
@@ -44,6 +129,17 @@ const checkOpenClawInstalled = async () => {
     } catch {
       return false;
     }
+  }
+};
+
+const checkOpenClawCliAvailable = async () => {
+  try {
+    const isWindows = os.platform() === "win32";
+    const command = isWindows ? "where openclaw" : "which openclaw";
+    await execAsync(command, { windowsHide: true, env: process.env });
+    return true;
+  } catch {
+    return false;
   }
 };
 
@@ -137,6 +233,22 @@ const writeAgentModels = async (agentDir, model, baseUrl) => {
   await fs.writeFile(modelsPath, JSON.stringify(existing, null, 2));
 };
 
+const removeAgentModels = async (agentDir) => {
+  try {
+    const modelsPath = path.join(agentDir, "models.json");
+    const content = await fs.readFile(modelsPath, "utf-8");
+    const existing = JSON.parse(content);
+    if (!existing?.providers?.["9router"]) return;
+
+    await backupFile(modelsPath);
+    delete existing.providers["9router"];
+    if (Object.keys(existing.providers).length === 0) delete existing.providers;
+    await fs.writeFile(modelsPath, JSON.stringify(existing, null, 2));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+};
+
 // POST - Update 9Router settings (merge with existing settings)
 export async function POST(request) {
   try {
@@ -149,6 +261,14 @@ export async function POST(request) {
 
     const openclawDir = getOpenClawDir();
     const settingsPath = getOpenClawSettingsPath();
+    const cliAvailable = await checkOpenClawCliAvailable();
+
+    if (!cliAvailable) {
+      return NextResponse.json(
+        { error: "OpenClaw CLI is required to validate 1Password SecretRef before writing settings" },
+        { status: 503 }
+      );
+    }
 
     await fs.mkdir(openclawDir, { recursive: true });
 
@@ -160,7 +280,7 @@ export async function POST(request) {
 
     if (!settings.agents) settings.agents = {};
     if (!settings.agents.defaults) settings.agents.defaults = {};
-    if (!settings.agents.defaults.model) settings.agents.defaults.model = {};
+    ensureDefaultModelObject(settings.agents.defaults);
     if (!settings.agents.defaults.models) settings.agents.defaults.models = {};
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
@@ -198,12 +318,13 @@ export async function POST(request) {
     }
 
     // Update models.providers.9router with all models
-    settings.models.providers["9router"] = {
+    const providerConfig = {
       baseUrl: normalizedBaseUrl,
       apiKey: NINE_ROUTER_API_KEY_REF,
       api: "openai-completions",
       models: [...allModelIds].map((m) => ({ id: m, name: m.split("/").pop() || m })),
     };
+    settings.models.providers["9router"] = providerConfig;
 
     // Set per-agent model in agents.list and write models.json
     if (settings.agents.list) {
@@ -224,6 +345,19 @@ export async function POST(request) {
       );
     }
 
+    await runOpenClawConfigDryRun({
+      models: { providers: { "9router": providerConfig } },
+      agents: {
+        defaults: {
+          model: settings.agents.defaults.model,
+          models: Object.fromEntries(
+            Object.entries(settings.agents.defaults.models).filter(([key]) => key.startsWith("9router/"))
+          ),
+        },
+      },
+    });
+
+    await backupFile(settingsPath);
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
 
     return NextResponse.json({
@@ -279,11 +413,25 @@ export async function DELETE() {
     }
 
     // Reset agents.defaults.model.primary if it uses 9router
-    if (settings.agents?.defaults?.model?.primary?.startsWith("9router/")) {
-      delete settings.agents.defaults.model.primary;
+    if (settings.agents?.defaults) {
+      if (typeof settings.agents.defaults.model === "string") {
+        if (settings.agents.defaults.model.startsWith("9router/")) delete settings.agents.defaults.model;
+      } else if (settings.agents.defaults.model?.primary?.startsWith("9router/")) {
+        delete settings.agents.defaults.model.primary;
+      }
+    }
+
+    if (settings.agents?.list) {
+      settings.agents.list = settings.agents.list.map(remove9RouterAgentModel);
+      await Promise.all(
+        settings.agents.list.map(async (agent) => {
+          if (agent.agentDir) await removeAgentModels(agent.agentDir);
+        })
+      );
     }
 
     // Write updated settings
+    await backupFile(settingsPath);
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
 
     return NextResponse.json({
