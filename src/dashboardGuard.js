@@ -67,9 +67,22 @@ const PROTECTED_API_PATHS = [
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
 const LOCAL_ONLY_PATHS = [
+  "/api/settings/proxy-test",
   "/api/cli-tools/cowork-settings",
+  "/api/cli-tools",
   "/api/cli-tools/antigravity-mitm",
   "/api/mcp/",
+  "/api/provider-nodes/validate",
+  "/api/proxy-pools/vercel-deploy",
+  "/api/proxy-pools/",
+  "/api/providers/validate",
+  "/api/providers/test-batch",
+  "/api/providers/",
+  "/api/models/test",
+  "/api/oauth/cursor",
+  "/api/oauth/gitlab/pat",
+  "/api/oauth/iflow/cookie",
+  "/api/oauth/kiro",
   "/api/tunnel/tailscale-install",
   "/api/tunnel/tailscale-enable",
   "/api/tunnel/tailscale-disable",

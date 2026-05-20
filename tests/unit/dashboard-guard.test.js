@@ -153,6 +153,26 @@ describe("dashboard guard local-only access", () => {
 
     expect(response).toBe(mocks.nextResponse);
   });
+
+  it.each([
+    "/api/settings/proxy-test",
+    "/api/providers/validate",
+    "/api/providers/test-batch",
+    "/api/providers/connection-id/test",
+    "/api/providers/connection-id/models",
+    "/api/proxy-pools/pool-id/test",
+    "/api/models/test",
+    "/api/oauth/cursor/import",
+    "/api/oauth/gitlab/pat",
+    "/api/cli-tools/openclaw-settings",
+  ])("requires local-only auth for host-capable route %s", async (pathname) => {
+    const response = await proxy(request(pathname, {
+      host: "router.example.com",
+    }));
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Local only: CLI token required");
+  });
 });
 
 describe("dashboard guard helpers", () => {
