@@ -15,7 +15,9 @@ function sanitizeProxyPool(pool) {
   return {
     ...pool,
     proxyUrl: undefined,
+    relayToken: undefined,
     hasProxyUrl: !!pool.proxyUrl,
+    relayTokenConfigured: !!pool.relayToken,
   };
 }
 

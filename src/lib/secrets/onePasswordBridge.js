@@ -6,12 +6,14 @@ const BRIDGE_ENABLED = process.env.NINEROUTER_1PASSWORD_BRIDGE !== "false";
 const DEFAULT_OP_TIMEOUT_MS = 15000;
 const DEFAULT_OP_READ_TIMEOUT_MS = 10000;
 const DEFAULT_READ_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_FAILED_READ_CACHE_TTL_MS = 30 * 1000;
 
 const TOP_LEVEL_SECRET_FIELDS = ["apiKey", "accessToken", "refreshToken", "idToken"];
 const PROVIDER_SPECIFIC_SECRET_FIELDS = ["copilotToken", "sessionToken", "ssoToken", "connectionProxyUrl"];
 const BRIDGE_ERROR_CODE = "ONEPASSWORD_BRIDGE_UNAVAILABLE";
 const SECRET_REF_PREFIXES = ["op://", "gcp://", "keychain://"];
 const readCache = new Map();
+const failedReadCache = new Map();
 
 function isPlainObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -86,7 +88,11 @@ function op(args, options = {}) {
 }
 
 function opJson(args, options = {}) {
-  const stdout = op([...args, "--format", "json"], options);
+  const templateIndex = args.indexOf("-");
+  const formattedArgs = templateIndex >= 0
+    ? [...args.slice(0, templateIndex), "--format", "json", ...args.slice(templateIndex)]
+    : [...args, "--format", "json"];
+  const stdout = op(formattedArgs, options);
   return JSON.parse(stdout);
 }
 
@@ -96,15 +102,26 @@ function readRef(ref) {
   const now = Date.now();
   const cached = readCache.get(normalized);
   if (cached && cached.expiresAt > now) return cached.value;
+  const failed = failedReadCache.get(normalized);
+  if (failed && failed.expiresAt > now) throw failed.error;
 
-  const value = op(["read", "--no-newline", normalized], {
-    timeout: Number(process.env.NINEROUTER_OP_READ_TIMEOUT_MS || DEFAULT_OP_READ_TIMEOUT_MS),
-  });
-  readCache.set(normalized, {
-    value,
-    expiresAt: now + Number(process.env.NINEROUTER_OP_READ_CACHE_TTL_MS || DEFAULT_READ_CACHE_TTL_MS),
-  });
-  return value;
+  try {
+    const value = op(["read", "--no-newline", normalized], {
+      timeout: Number(process.env.NINEROUTER_OP_READ_TIMEOUT_MS || DEFAULT_OP_READ_TIMEOUT_MS),
+    });
+    failedReadCache.delete(normalized);
+    readCache.set(normalized, {
+      value,
+      expiresAt: now + Number(process.env.NINEROUTER_OP_READ_CACHE_TTL_MS || DEFAULT_READ_CACHE_TTL_MS),
+    });
+    return value;
+  } catch (error) {
+    failedReadCache.set(normalized, {
+      error,
+      expiresAt: now + Number(process.env.NINEROUTER_OP_FAILED_READ_CACHE_TTL_MS || DEFAULT_FAILED_READ_CACHE_TTL_MS),
+    });
+    throw error;
+  }
 }
 
 function tryReadRef(ref, fallback) {
@@ -123,6 +140,7 @@ function buildItemTemplate(conn, fieldPath, secret) {
 function buildScopedItemTemplate(scope, owner, fieldPath, secret, title = scopedItemTitle(scope, owner, fieldPath)) {
   return {
     title,
+    category: "PASSWORD",
     tags: ["9router", "9router-secret", `scope:${safePart(scope)}`, `provider:${safePart(owner.provider || owner.type || "unknown")}`],
     fields: [
       {
@@ -162,7 +180,7 @@ function createItem(conn, fieldPath, secret) {
 }
 
 function createItemFromTemplate(template) {
-  const item = opJson(["item", "create", "--vault", DEFAULT_VAULT, "--category", "password", "-"], {
+  const item = opJson(["item", "create", "--vault", DEFAULT_VAULT, "--template", "/dev/stdin"], {
     input: JSON.stringify(template),
   });
   return {
@@ -186,7 +204,7 @@ function editItemFromTemplate(existingRef, template) {
   const itemId = existingRef?.itemId || getItemIdFromRef(existingRef?.ref);
   if (!itemId) return createItemFromTemplate(template);
   try {
-    const item = opJson(["item", "edit", itemId, "--vault", existingRef.vault || DEFAULT_VAULT], {
+    const item = opJson(["item", "edit", itemId, "--vault", existingRef.vault || DEFAULT_VAULT, "--template", "/dev/stdin"], {
       input: JSON.stringify(template),
     });
     if (existingRef?.ref) readCache.delete(existingRef.ref);
@@ -283,9 +301,10 @@ export function hydrateSecretForRuntime(value) {
 export function onePasswordBridgeStatus() {
   if (!BRIDGE_ENABLED) return { enabled: false };
   try {
-    op(["item", "create", "--vault", DEFAULT_VAULT, "--category", "password", "--dry-run", "-"], {
+    op(["item", "create", "--vault", DEFAULT_VAULT, "--dry-run", "--format", "json", "--template", "/dev/stdin"], {
       input: JSON.stringify({
         title: "9router/status/dry-run",
+        category: "PASSWORD",
         fields: [{ id: "password", type: "CONCEALED", purpose: "PASSWORD", label: "password", value: "TEST_VALUE_DO_NOT_USE" }],
       }),
     });

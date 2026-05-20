@@ -321,6 +321,7 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
     return proxyAwareFetch(url, options, {
       vercelRelayUrl: effectiveProxy.vercelRelayUrl,
+      vercelRelayToken: effectiveProxy.vercelRelayToken || "",
     });
   }
 

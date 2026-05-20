@@ -3,16 +3,17 @@ import { getProxyPoolById, updateProxyPool } from "@/models";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { fetch as undiciFetch } from "undici";
 
-async function testVercelRelay(relayUrl, timeoutMs = 10000) {
+async function testVercelRelay(relay, timeoutMs = 10000) {
   const controller = new AbortController();
   const startedAt = Date.now();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await undiciFetch(relayUrl, {
+    const res = await undiciFetch(relay.url, {
       method: "GET",
       headers: {
         "x-relay-target": "https://httpbin.org",
         "x-relay-path": "/get",
+        ...(relay.token ? { "x-relay-token": relay.token } : {}),
       },
       signal: controller.signal,
     });
@@ -44,7 +45,7 @@ export async function POST(request, { params }) {
     }
 
     const result = proxyPool.type === "vercel"
-      ? await testVercelRelay(proxyPool.proxyUrl)
+      ? await testVercelRelay({ url: proxyPool.proxyUrl, token: proxyPool.relayToken })
       : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
     const now = new Date().toISOString();
 

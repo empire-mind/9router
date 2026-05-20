@@ -2,7 +2,7 @@
 /* eslint-disable no-console */
 
 const { spawnSync } = require("node:child_process");
-const { createHash } = require("node:crypto");
+const { createHmac } = require("node:crypto");
 const { existsSync, mkdirSync, copyFileSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 
@@ -11,12 +11,12 @@ const dbPath = process.env.NINEROUTER_DB || join(home, ".9router/db/data.sqlite"
 const vault = process.env.NINEROUTER_1PASSWORD_VAULT || "Empire";
 const opBin = process.env.NINEROUTER_OP_BIN || "op";
 const workspace = process.env.NINEROUTER_COMMISSION_WORKSPACE || join(home, "Documents/Codex/2026-05-20/can-you-assess-all-thats-on");
-const runId = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "T");
+const runId = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
 const outRoot = join(workspace, `9router-1password-sync-${runId}`);
 
 const topSecretFields = ["apiKey", "accessToken", "refreshToken", "idToken"];
 const providerSpecificSecretFields = ["copilotToken", "sessionToken", "ssoToken", "connectionProxyUrl"];
-const proxyPoolSecretFields = ["proxyUrl"];
+const proxyPoolSecretFields = ["proxyUrl", "relayToken"];
 const settingsSecretFields = ["oidcClientSecret", "outboundProxyUrl", "mitmSudoEncrypted"];
 const apply = process.argv.includes("--apply");
 const auditOnly = process.argv.includes("--audit") || !apply;
@@ -61,7 +61,11 @@ function tryRun(cmd, args, options = {}) {
 }
 
 function runJson(cmd, args, options = {}) {
-  return JSON.parse(run(cmd, [...args, "--format", "json"], options));
+  const templateIndex = args.indexOf("-");
+  const formattedArgs = templateIndex >= 0
+    ? [...args.slice(0, templateIndex), "--format", "json", ...args.slice(templateIndex)]
+    : [...args, "--format", "json"];
+  return JSON.parse(run(cmd, formattedArgs, options));
 }
 
 function sqliteJson(sql) {
@@ -131,6 +135,7 @@ function itemTemplate(scope, owner, fieldPath, secret) {
   const title = itemTitle(scope, owner, fieldPath);
   return {
     title,
+    category: "PASSWORD",
     tags: ["9router", "9router-secret", `scope:${safePart(scope)}`, `provider:${safePart(owner.provider || owner.type || "unknown")}`],
     fields: [
       { id: "password", type: "CONCEALED", purpose: "PASSWORD", label: "password", value: secret },
@@ -162,8 +167,8 @@ function upsertSecret(scope, owner, fieldPath, secret) {
   const template = itemTemplate(scope, owner, fieldPath, secret);
   const existing = getItem(title);
   const item = existing
-    ? runJson(opBin, ["item", "edit", existing.id, "--vault", vault], { input: JSON.stringify(template) })
-    : runJson(opBin, ["item", "create", "--vault", vault, "--category", "password", "-"], { input: JSON.stringify(template) });
+    ? runJson(opBin, ["item", "edit", existing.id, "--vault", vault, "--template", "/dev/stdin"], { input: JSON.stringify(template) })
+    : runJson(opBin, ["item", "create", "--vault", vault, "--template", "/dev/stdin"], { input: JSON.stringify(template) });
 
   return {
     source: "1password",
@@ -249,12 +254,12 @@ function readSettingsRow() {
 
 function fingerprint(value) {
   if (!value || typeof value !== "string") return null;
-  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+  return `lookup-hmac:${createHmac("sha256", "9router-usage-lookup-v1").update(value).digest("hex").slice(0, 16)}`;
 }
 
 function apiKeyStorageId(value, keyRows) {
   if (!value || typeof value !== "string") return null;
-  if (value.startsWith("key:") || value.startsWith("sha256:")) return value;
+  if (value.startsWith("key:") || value.startsWith("sha256:") || value.startsWith("lookup-hmac:")) return value;
   const direct = keyRows.find((row) => row.key === value);
   if (direct?.id) return `key:${direct.id}`;
   return fingerprint(value);
@@ -423,9 +428,10 @@ function main() {
   const detail = { providers: [], proxyPools: [], apiKeys: [], settings: null, usage: null };
 
   if (apply) {
-    run(opBin, ["item", "create", "--vault", vault, "--category", "password", "--dry-run", "-"], {
+    run(opBin, ["item", "create", "--vault", vault, "--dry-run", "--format", "json", "--template", "/dev/stdin"], {
       input: JSON.stringify({
         title: "9router/status/dry-run",
+        category: "PASSWORD",
         fields: [{ id: "password", type: "CONCEALED", purpose: "PASSWORD", label: "password", value: "TEST_VALUE_DO_NOT_USE" }],
       }),
     });

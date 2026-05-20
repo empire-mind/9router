@@ -203,6 +203,7 @@ export async function POST(request) {
     // Hide sensitive fields
     const result = { ...newConnection };
     delete result.apiKey;
+    result.providerSpecificData = sanitizeProviderSpecificData(result.providerSpecificData);
 
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {

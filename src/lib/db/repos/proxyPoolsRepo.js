@@ -3,7 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { hydrateSecretForRuntime, vaultizeSecretForStorage } from "../../secrets/onePasswordBridge.js";
 
-const PROXY_SECRET_FIELDS = ["proxyUrl"];
+const PROXY_SECRET_FIELDS = ["proxyUrl", "relayToken"];
 
 function rowToPool(row, options = {}) {
   if (!row) return null;
@@ -89,6 +89,7 @@ export async function createProxyPool(data) {
     id: data.id || uuidv4(),
     name: data.name,
     proxyUrl: data.proxyUrl,
+    relayToken: data.relayToken || null,
     noProxy: data.noProxy || "",
     type: data.type || "http",
     isActive: data.isActive !== undefined ? data.isActive : true,

@@ -1,11 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { hydrateSecretForRuntime, isStoredSecretReference, vaultizeSecretForStorage } from "../../secrets/onePasswordBridge.js";
 
 function apiKeyFingerprint(key) {
   if (!key || typeof key !== "string") return "";
-  return `sha256:${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+  return `lookup-hmac:${createHmac("sha256", "9router-usage-lookup-v1").update(key).digest("hex").slice(0, 16)}`;
 }
 
 function rowToKey(row) {

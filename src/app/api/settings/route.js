@@ -12,11 +12,27 @@ const SETTINGS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store"
 };
 
+const SETTINGS_SECRET_FIELDS = ["password", "oidcClientSecret", "outboundProxyUrl", "mitmSudoEncrypted"];
+
+function sanitizeSettingsForResponse(settings = {}) {
+  const safe = { ...settings };
+  const oidcClientSecret = settings.oidcClientSecret;
+
+  for (const field of SETTINGS_SECRET_FIELDS) {
+    delete safe[field];
+  }
+
+  safe.oidcConfigured = !!(settings.oidcIssuerUrl && settings.oidcClientId && oidcClientSecret);
+  safe.hasPassword = !!settings.password;
+  safe.outboundProxyConfigured = !!settings.outboundProxyUrl;
+  safe.mitmSudoConfigured = !!settings.mitmSudoEncrypted;
+  return safe;
+}
+
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
-    safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    const safeSettings = sanitizeSettingsForResponse(settings);
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
@@ -24,8 +40,7 @@ export async function GET() {
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
-      enableTranslator,
-      hasPassword: !!password
+      enableTranslator
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error getting settings:", error);
@@ -91,8 +106,7 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
-    safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    const safeSettings = sanitizeSettingsForResponse(settings);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);

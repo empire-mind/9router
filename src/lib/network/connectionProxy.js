@@ -91,6 +91,7 @@ export async function resolveConnectionProxyConfig(
             strictProxy: proxyPool.strictProxy === true,
 
             vercelRelayUrl: proxyUrl,
+            vercelRelayToken: normalizeSecretString(proxyPool?.relayToken),
           };
         }
 

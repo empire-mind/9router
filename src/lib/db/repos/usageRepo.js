@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -30,7 +30,7 @@ export const statsEmitter = global._statsEmitter;
 
 function apiKeyFingerprint(apiKey) {
   if (!apiKey || typeof apiKey !== "string") return null;
-  return `sha256:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`;
+  return `lookup-hmac:${createHmac("sha256", "9router-usage-lookup-v1").update(apiKey).digest("hex").slice(0, 16)}`;
 }
 
 async function normalizeApiKeyForStorage(apiKey) {

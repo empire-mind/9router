@@ -184,6 +184,7 @@ export async function PUT(request, { params }) {
     delete result.accessToken;
     delete result.refreshToken;
     delete result.idToken;
+    result.providerSpecificData = sanitizeProviderSpecificData(result.providerSpecificData);
 
     return NextResponse.json({ connection: result });
   } catch (error) {
