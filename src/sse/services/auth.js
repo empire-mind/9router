@@ -3,7 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
-import { isOnePasswordReference, resolveSecretValue } from "@/lib/secrets/onePassword";
+import { isSecretReference, resolveSecretValue } from "@/lib/secrets/onePassword";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -164,12 +164,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const refreshToken = resolveSecretValue(connection.refreshToken);
     const copilotToken = resolveSecretValue(connection.providerSpecificData?.copilotToken);
     if (
-      (isOnePasswordReference(connection.apiKey) && !apiKey) ||
-      (isOnePasswordReference(connection.accessToken) && !accessToken) ||
-      (isOnePasswordReference(connection.refreshToken) && !refreshToken) ||
-      (isOnePasswordReference(connection.providerSpecificData?.copilotToken) && !copilotToken)
+      (isSecretReference(connection.apiKey) && !apiKey) ||
+      (isSecretReference(connection.accessToken) && !accessToken) ||
+      (isSecretReference(connection.refreshToken) && !refreshToken) ||
+      (isSecretReference(connection.providerSpecificData?.copilotToken) && !copilotToken)
     ) {
-      log.warn("AUTH", `${provider} account ${connection.id?.slice(0, 8) || "unknown"} has an unresolved 1Password secret reference`);
+      log.warn("AUTH", `${provider} account ${connection.id?.slice(0, 8) || "unknown"} has an unresolved secret reference`);
     }
 
     return {
