@@ -10,14 +10,15 @@ function apiKeyFingerprint(key) {
 
 function rowToKey(row) {
   if (!row) return null;
+  const storedReference = isStoredSecretReference(row.key);
   const hydratedKey = hydrateSecretForRuntime(row.key);
-  const unresolved = isStoredSecretReference(row.key) && hydratedKey === row.key;
+  const unresolved = storedReference && hydratedKey === row.key;
   return {
     id: row.id,
-    key: unresolved ? "" : hydratedKey,
-    keyRef: isStoredSecretReference(row.key) ? row.key : null,
+    key: storedReference ? "" : hydratedKey,
+    keyRef: storedReference ? row.key : null,
     keyAvailable: !unresolved,
-    keyFingerprint: unresolved ? "" : apiKeyFingerprint(hydratedKey),
+    keyFingerprint: storedReference || unresolved ? "" : apiKeyFingerprint(hydratedKey),
     name: row.name,
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
