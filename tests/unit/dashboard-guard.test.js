@@ -48,7 +48,7 @@ function request(pathname, headers = {}) {
 describe("dashboard guard public LLM API access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: false });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
@@ -68,11 +68,28 @@ describe("dashboard guard public LLM API access", () => {
     expect(response.body.error).toBe("API key required for remote API access");
   });
 
-  it("allows loopback rewritten public LLM API without API key", async () => {
+  it("rejects loopback rewritten public LLM API without API key or dashboard session", async () => {
+    const response = await proxy(request("/api/v1/chat/completions", { host: "localhost:20128" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("allows loopback rewritten public LLM API with dashboard session", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+
     const response = await proxy(request("/api/v1/chat/completions", { host: "localhost:20128" }));
 
     expect(response).toBe(mocks.nextResponse);
-    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects rewritten public LLM API with spoofed loopback Host but no API key", async () => {
+    const response = await proxy(request("/api/v1/models", {
+      host: "127.0.0.1:20128",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
   });
 
   it("rejects remote beta public LLM API without API key", async () => {

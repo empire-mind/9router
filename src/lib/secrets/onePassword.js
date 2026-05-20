@@ -46,6 +46,7 @@ function opCandidates() {
 function gcloudCandidates() {
   return [
     process.env.GCLOUD_CLI_PATH,
+    path.join(os.homedir(), ".local/bin/gcloud"),
     "/opt/homebrew/bin/gcloud",
     "/usr/local/bin/gcloud",
     "/usr/bin/gcloud",

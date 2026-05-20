@@ -33,6 +33,7 @@ const PUBLIC_API_PATHS = [
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
+const REWRITTEN_PUBLIC_PREFIXES = ["/api/v1", "/api/v1beta"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -118,6 +119,10 @@ function isPublicLlmApi(pathname) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function isRewrittenPublicLlmApi(pathname) {
+  return REWRITTEN_PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 function extractApiKey(request) {
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
@@ -130,10 +135,19 @@ async function hasValidApiKey(request) {
   return await validateApiKey(apiKey);
 }
 
-async function canAccessPublicLlmApi(request) {
-  if (isLocalRequest(request)) return true;
+async function canAccessPublicLlmApi(request, pathname) {
   if (await hasValidCliToken(request)) return true;
-  return await hasValidApiKey(request);
+  if (await hasValidApiKey(request)) return true;
+
+  // Same-origin dashboard calls to rewritten API routes may use the dashboard
+  // session, but raw clients must present an API key. This avoids trusting a
+  // spoofable Host header as proof of locality.
+  if (isRewrittenPublicLlmApi(pathname)) {
+    return isLocalRequest(request) && await hasValidToken(request);
+  }
+
+  const settings = await loadSettings();
+  return settings?.requireApiKey === false && isLocalRequest(request);
 }
 
 async function canAccessLocalOnlyRoute(request) {
@@ -190,6 +204,7 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  isRewrittenPublicLlmApi,
 };
 
 export async function proxy(request) {
@@ -210,7 +225,7 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    if (await canAccessPublicLlmApi(request, pathname)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
 

@@ -1,4 +1,5 @@
 import { spawnSync } from "child_process";
+import { resolveSecretValue } from "./onePassword.js";
 
 const DEFAULT_VAULT = process.env.NINEROUTER_1PASSWORD_VAULT || "Empire";
 const OP_BIN = process.env.NINEROUTER_OP_BIN || "op";
@@ -23,12 +24,19 @@ export function isSecretRef(value) {
   return isPlainObject(value) && value.source === "1password" && typeof value.ref === "string";
 }
 
+function isObjectSecretReference(value) {
+  return isPlainObject(value) &&
+    typeof value.ref === "string" &&
+    SECRET_REF_PREFIXES.some((prefix) => value.ref.startsWith(prefix));
+}
+
 export function isOpUri(value) {
   return typeof value === "string" && value.startsWith("op://");
 }
 
 export function isStoredSecretReference(value) {
   if (isSecretRef(value)) return true;
+  if (isObjectSecretReference(value)) return true;
   return typeof value === "string" && SECRET_REF_PREFIXES.some((prefix) => value.startsWith(prefix));
 }
 
@@ -130,6 +138,12 @@ function tryReadRef(ref, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function tryResolveStoredReference(value) {
+  if (isObjectSecretReference(value)) return resolveSecretValue(value.ref) || value;
+  if (isStoredSecretReference(value)) return resolveSecretValue(value) || value;
+  return value;
 }
 
 function buildItemTemplate(conn, fieldPath, secret) {
@@ -265,15 +279,13 @@ export function hydrateConnectionSecretsForRuntime(conn) {
 
   for (const field of TOP_LEVEL_SECRET_FIELDS) {
     const value = runtimeConn[field];
-    if (isSecretRef(value)) runtimeConn[field] = tryReadRef(value.ref, value);
-    else if (isOpUri(value)) runtimeConn[field] = tryReadRef(value, value);
+    if (isStoredSecretReference(value)) runtimeConn[field] = tryResolveStoredReference(value);
   }
 
   if (runtimeConn.providerSpecificData) {
     for (const field of PROVIDER_SPECIFIC_SECRET_FIELDS) {
       const value = runtimeConn.providerSpecificData[field];
-      if (isSecretRef(value)) runtimeConn.providerSpecificData[field] = tryReadRef(value.ref, value);
-      else if (isOpUri(value)) runtimeConn.providerSpecificData[field] = tryReadRef(value, value);
+      if (isStoredSecretReference(value)) runtimeConn.providerSpecificData[field] = tryResolveStoredReference(value);
     }
   }
 
@@ -293,9 +305,7 @@ export function vaultizeSecretForStorage({ scope, owner, fieldPath, value, exist
 
 export function hydrateSecretForRuntime(value) {
   if (!BRIDGE_ENABLED || !value) return value;
-  if (isSecretRef(value)) return tryReadRef(value.ref, value);
-  if (isOpUri(value)) return tryReadRef(value, value);
-  return value;
+  return tryResolveStoredReference(value);
 }
 
 export function onePasswordBridgeStatus() {

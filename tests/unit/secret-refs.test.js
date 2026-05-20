@@ -68,4 +68,66 @@ describe("secret references", () => {
 
     expect(resolveSecretValue("keychain://halvo-shared/OPENROUTER_API_KEY")).toBe("resolved-keychain-secret");
   });
+
+  it("hydrates API key references through the storage bridge", async () => {
+    const execFileSync = vi.fn((cmd, args) => {
+      if (args?.includes("--version")) return "Google Cloud SDK 999.0.0";
+      expect(cmd).toBe("gcloud");
+      expect(args).toEqual([
+        "secrets",
+        "versions",
+        "access",
+        "latest",
+        "--secret",
+        "9router-empire-mbp-studio-api-key",
+      ]);
+      return "resolved-router-key\n";
+    });
+
+    vi.doMock("node:child_process", () => ({
+      spawnSync: vi.fn(() => ({ status: 1, stderr: "op unavailable" })),
+      execFileSync,
+    }));
+    vi.doMock("node:fs", async () => {
+      const actual = await vi.importActual("node:fs");
+      return { ...actual, default: { ...actual.default, existsSync: vi.fn(() => false) } };
+    });
+
+    const { hydrateSecretForRuntime } = await import("@/lib/secrets/onePasswordBridge.js");
+
+    expect(hydrateSecretForRuntime("gcp://9router-empire-mbp-studio-api-key")).toBe("resolved-router-key");
+  });
+
+  it("hydrates provider connection object references through the storage bridge", async () => {
+    const execFileSync = vi.fn((cmd, args) => {
+      if (args?.includes("--version")) return "Google Cloud SDK 999.0.0";
+      expect(cmd).toBe("gcloud");
+      expect(args).toEqual([
+        "secrets",
+        "versions",
+        "access",
+        "latest",
+        "--secret",
+        "deepseek-api-key",
+      ]);
+      return "resolved-provider-key\n";
+    });
+
+    vi.doMock("node:child_process", () => ({
+      spawnSync: vi.fn(() => ({ status: 1, stderr: "op unavailable" })),
+      execFileSync,
+    }));
+    vi.doMock("node:fs", async () => {
+      const actual = await vi.importActual("node:fs");
+      return { ...actual, default: { ...actual.default, existsSync: vi.fn(() => false) } };
+    });
+
+    const { hydrateConnectionSecretsForRuntime } = await import("@/lib/secrets/onePasswordBridge.js");
+    const hydrated = hydrateConnectionSecretsForRuntime({
+      provider: "deepseek",
+      apiKey: { source: "gcp", ref: "gcp://deepseek-api-key" },
+    });
+
+    expect(hydrated.apiKey).toBe("resolved-provider-key");
+  });
 });
