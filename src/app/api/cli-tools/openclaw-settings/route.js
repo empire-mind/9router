@@ -26,7 +26,7 @@ const NINE_ROUTER_API_KEY_REF = {
   id: "NINE_ROUTER_API_KEY",
 };
 
-const timestamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "T");
+const timestamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
 
 const backupFile = async (filePath) => {
   try {

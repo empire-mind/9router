@@ -1,5 +1,4 @@
 import { EventEmitter } from "events";
-import { createHmac } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -28,21 +27,15 @@ const connCache = global._connectionMapCache;
 
 export const statsEmitter = global._statsEmitter;
 
-function apiKeyFingerprint(apiKey) {
-  if (!apiKey || typeof apiKey !== "string") return null;
-  return `lookup-hmac:${createHmac("sha256", "9router-usage-lookup-v1").update(apiKey).digest("hex").slice(0, 16)}`;
-}
-
 async function normalizeApiKeyForStorage(apiKey) {
-  const fingerprint = apiKeyFingerprint(apiKey);
-  if (!fingerprint) return null;
+  if (!apiKey || typeof apiKey !== "string") return null;
   try {
     const { getApiKeys } = await import("./apiKeysRepo.js");
     const keys = await getApiKeys();
-    const match = keys.find((k) => k.key === apiKey || k.keyFingerprint === fingerprint);
+    const match = keys.find((k) => k.key === apiKey);
     if (match?.id) return `key:${match.id}`;
   } catch {}
-  return fingerprint;
+  return "unmapped";
 }
 
 function getLocalDateKey(timestamp) {

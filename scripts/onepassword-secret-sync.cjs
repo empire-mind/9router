@@ -2,7 +2,6 @@
 /* eslint-disable no-console */
 
 const { spawnSync } = require("node:child_process");
-const { createHmac } = require("node:crypto");
 const { existsSync, mkdirSync, copyFileSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 
@@ -252,17 +251,12 @@ function readSettingsRow() {
   return rows[0] ? JSON.parse(rows[0].data || "{}") : {};
 }
 
-function fingerprint(value) {
-  if (!value || typeof value !== "string") return null;
-  return `lookup-hmac:${createHmac("sha256", "9router-usage-lookup-v1").update(value).digest("hex").slice(0, 16)}`;
-}
-
 function apiKeyStorageId(value, keyRows) {
   if (!value || typeof value !== "string") return null;
   if (value.startsWith("key:") || value.startsWith("sha256:") || value.startsWith("lookup-hmac:")) return value;
   const direct = keyRows.find((row) => row.key === value);
   if (direct?.id) return `key:${direct.id}`;
-  return fingerprint(value);
+  return "unmapped";
 }
 
 function migrateProviders(summary, detail) {
