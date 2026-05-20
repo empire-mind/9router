@@ -156,6 +156,21 @@ function isPublicApi(pathname) {
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function hostFromUrl(value) {
+  if (!value) return "";
+  try { return new URL(value).hostname.toLowerCase(); } catch { return ""; }
+}
+
+async function isBlockedAdminHost(request) {
+  const settings = await loadSettings();
+  if (!settings || settings.tunnelDashboardAccess === true) return false;
+
+  const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
+  const tunnelHost = hostFromUrl(settings.tunnelUrl);
+  const tailscaleHost = hostFromUrl(settings.tailscaleUrl);
+  return !!((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost));
+}
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
@@ -189,6 +204,9 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
+    if (await isBlockedAdminHost(request)) {
+      return NextResponse.json({ error: "Admin API disabled on tunnel host" }, { status: 403 });
+    }
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
