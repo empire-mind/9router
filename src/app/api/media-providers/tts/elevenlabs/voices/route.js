@@ -15,7 +15,7 @@ export async function GET(request) {
     const langFilter = searchParams.get("lang");
 
     // Direct DB read - bypass auth mutex used for TTS inference
-    const connections = await getProviderConnections({ provider: "elevenlabs", isActive: true });
+    const connections = await getProviderConnections({ provider: "elevenlabs", isActive: true, hydrateSecrets: true });
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) {
       return NextResponse.json({ error: "No ElevenLabs connection found" }, { status: 400 });

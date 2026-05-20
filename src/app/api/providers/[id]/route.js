@@ -5,6 +5,26 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { isOnePasswordBridgeUnavailable } from "@/lib/secrets/onePasswordBridge";
+
+const SENSITIVE_PROVIDER_SPECIFIC_FIELDS = [
+  "copilotToken",
+  "sessionToken",
+  "ssoToken",
+  "connectionProxyUrl",
+];
+
+function sanitizeProviderSpecificData(providerSpecificData) {
+  if (!providerSpecificData || typeof providerSpecificData !== "object") return providerSpecificData;
+  const safe = { ...providerSpecificData };
+  for (const field of SENSITIVE_PROVIDER_SPECIFIC_FIELDS) {
+    if (safe[field] !== undefined) {
+      safe[field] = undefined;
+      safe[`${field}Set`] = true;
+    }
+  }
+  return safe;
+}
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -75,6 +95,7 @@ export async function GET(request, { params }) {
     delete result.accessToken;
     delete result.refreshToken;
     delete result.idToken;
+    result.providerSpecificData = sanitizeProviderSpecificData(result.providerSpecificData);
 
     return NextResponse.json({ connection: result });
   } catch (error) {
@@ -167,6 +188,12 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ connection: result });
   } catch (error) {
     console.log("Error updating connection:", error);
+    if (isOnePasswordBridgeUnavailable(error)) {
+      return NextResponse.json(
+        { error: "1Password bridge is unavailable. Sign in to 1Password CLI and retry; the provider secret was not saved to disk." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });
   }
 }

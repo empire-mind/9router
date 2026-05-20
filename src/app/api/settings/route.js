@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import { isOnePasswordBridgeUnavailable } from "@/lib/secrets/onePasswordBridge";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -95,6 +96,12 @@ export async function PATCH(request) {
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);
+    if (isOnePasswordBridgeUnavailable(error)) {
+      return NextResponse.json(
+        { error: "1Password bridge is unavailable. Sign in to 1Password CLI and retry; the settings secret was not saved to disk." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

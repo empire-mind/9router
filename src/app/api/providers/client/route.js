@@ -15,7 +15,7 @@ const SAFE_FIELDS = [
 const SAFE_PSD_FIELDS = [
   "baseUrl", "azureEndpoint", "deployment", "apiVersion", "accountId",
   "region", "projectId", "resourceUrl", "proxyPoolId",
-  "connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy",
+  "connectionProxyEnabled", "connectionProxyUrlSet", "connectionNoProxy",
   "githubLogin", "githubName", "githubEmail", "githubUserId",
   "username", "firstName", "lastName", "authMethod", "authKind",
 ];
@@ -36,6 +36,7 @@ function sanitize(c) {
     for (const f of SAFE_PSD_FIELDS) {
       if (c.providerSpecificData[f] !== undefined) psd[f] = c.providerSpecificData[f];
     }
+    if (c.providerSpecificData.connectionProxyUrl !== undefined) psd.connectionProxyUrlSet = true;
     safe.providerSpecificData = psd;
   }
   return safe;

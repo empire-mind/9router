@@ -1294,7 +1294,7 @@ export async function backfillCodexEmails() {
   codexBackfillDone = true;
   try {
     const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
-    const connections = await getProviderConnections();
+    const connections = await getProviderConnections({ hydrateSecrets: true });
     const targets = connections.filter((c) => {
       if (c.provider !== "codex" || c.authType !== "oauth" || !c.idToken) return false;
       const hasEmail = !!c.email;

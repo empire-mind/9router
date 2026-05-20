@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -26,6 +27,23 @@ const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 
 export const statsEmitter = global._statsEmitter;
+
+function apiKeyFingerprint(apiKey) {
+  if (!apiKey || typeof apiKey !== "string") return null;
+  return `sha256:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`;
+}
+
+async function normalizeApiKeyForStorage(apiKey) {
+  const fingerprint = apiKeyFingerprint(apiKey);
+  if (!fingerprint) return null;
+  try {
+    const { getApiKeys } = await import("./apiKeysRepo.js");
+    const keys = await getApiKeys();
+    const match = keys.find((k) => k.key === apiKey || k.keyFingerprint === fingerprint);
+    if (match?.id) return `key:${match.id}`;
+  } catch {}
+  return fingerprint;
+}
 
 function getLocalDateKey(timestamp) {
   const d = timestamp ? new Date(timestamp) : new Date();
@@ -243,11 +261,13 @@ export async function getActiveRequests() {
 export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
+    const storageApiKey = await normalizeApiKeyForStorage(entry.apiKey);
+    const storageEntry = { ...entry, apiKey: storageApiKey };
 
-    if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    if (!storageEntry.timestamp) storageEntry.timestamp = new Date().toISOString();
+    storageEntry.cost = await calculateCost(storageEntry.provider, storageEntry.model, storageEntry.tokens);
 
-    const tokens = entry.tokens || {};
+    const tokens = storageEntry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
@@ -257,20 +277,20 @@ export async function saveRequestUsage(entry) {
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+          storageEntry.timestamp, storageEntry.provider || null, storageEntry.model || null,
+          storageEntry.connectionId || null, storageEntry.apiKey || null, storageEntry.endpoint || null,
+          promptTokens, completionTokens, storageEntry.cost || 0, storageEntry.status || "ok",
           stringifyJson(tokens), stringifyJson({}),
         ]
       );
 
-      const dateKey = getLocalDateKey(entry.timestamp);
+      const dateKey = getLocalDateKey(storageEntry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
         byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
       };
-      aggregateEntryToDay(day, entry);
+      aggregateEntryToDay(day, storageEntry);
       db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
 
       // Atomic counter increment in same transaction
@@ -279,7 +299,7 @@ export async function saveRequestUsage(entry) {
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
     });
 
-    pushToRing(entry);
+    pushToRing(storageEntry);
     statsEmitter.emit("update");
   } catch (e) {
     console.error("Failed to save usage stats:", e);
@@ -339,7 +359,12 @@ export async function getUsageStats(period = "all") {
   let allApiKeys = [];
   try { allApiKeys = await getApiKeys(); } catch {}
   const apiKeyMap = {};
-  for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  for (const k of allApiKeys) {
+    const info = { name: k.name, id: k.id, createdAt: k.createdAt };
+    apiKeyMap[`key:${k.id}`] = info;
+    if (k.key) apiKeyMap[k.key] = info; // legacy rows before no-disk migration
+    if (k.keyFingerprint) apiKeyMap[k.keyFingerprint] = info;
+  }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);

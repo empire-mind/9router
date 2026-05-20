@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { hydrateConnectionSecretsForRuntime, vaultizeConnectionSecretsForStorage } from "../../secrets/onePasswordBridge.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -10,10 +11,10 @@ const OPTIONAL_FIELDS = [
   "consecutiveUseCount",
 ];
 
-function rowToConn(row) {
+function rowToConn(row, options = {}) {
   if (!row) return null;
   const extra = parseJson(row.data, {});
-  return {
+  const connection = {
     ...extra,
     id: row.id,
     provider: row.provider,
@@ -25,6 +26,7 @@ function rowToConn(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+  return options.hydrateSecrets ? hydrateConnectionSecretsForRuntime(connection) : connection;
 }
 
 function connToRow(c) {
@@ -44,7 +46,10 @@ function connToRow(c) {
 }
 
 function upsert(db, c) {
-  const r = connToRow(c);
+  const existingRow = c.id ? db.get(`SELECT * FROM providerConnections WHERE id = ?`, [c.id]) : null;
+  const existingConn = existingRow ? parseJson(existingRow.data, {}) : null;
+  const storageConn = vaultizeConnectionSecretsForStorage(c, existingConn);
+  const r = connToRow(storageConn);
   db.run(
     `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -60,19 +65,20 @@ export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
   const params = [];
+  const hydrateSecrets = filter.hydrateSecrets === true;
   if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const rows = db.all(sql, params);
-  const list = rows.map(rowToConn);
+  const list = rows.map((row) => rowToConn(row, { hydrateSecrets }));
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
   return list;
 }
 
-export async function getProviderConnectionById(id) {
+export async function getProviderConnectionById(id, options = {}) {
   const db = await getAdapter();
   const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-  return rowToConn(row);
+  return rowToConn(row, { hydrateSecrets: options.hydrateSecrets === true });
 }
 
 // Internal sync reorder — must be called INSIDE a transaction

@@ -4,10 +4,23 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { isSecretReference, resolveSecretValue } from "@/lib/secrets/onePassword";
+import { hydrateSecretForRuntime, isStoredSecretReference } from "@/lib/secrets/onePasswordBridge";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+function isRuntimeSecretReference(value) {
+  return isStoredSecretReference(value) || isSecretReference(value);
+}
+
+function resolveRuntimeSecret(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const hydrated = hydrateSecretForRuntime(value);
+  const resolved = resolveSecretValue(hydrated);
+  if (isRuntimeSecretReference(value) && isRuntimeSecretReference(resolved)) return null;
+  return resolved;
+}
 
 /**
  * Get provider credentials from localDb
@@ -159,15 +172,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
-    const apiKey = resolveSecretValue(connection.apiKey);
-    const accessToken = resolveSecretValue(connection.accessToken);
-    const refreshToken = resolveSecretValue(connection.refreshToken);
-    const copilotToken = resolveSecretValue(connection.providerSpecificData?.copilotToken);
+    const apiKey = resolveRuntimeSecret(connection.apiKey);
+    const accessToken = resolveRuntimeSecret(connection.accessToken);
+    const refreshToken = resolveRuntimeSecret(connection.refreshToken);
+    const copilotToken = resolveRuntimeSecret(connection.providerSpecificData?.copilotToken);
     if (
-      (isSecretReference(connection.apiKey) && !apiKey) ||
-      (isSecretReference(connection.accessToken) && !accessToken) ||
-      (isSecretReference(connection.refreshToken) && !refreshToken) ||
-      (isSecretReference(connection.providerSpecificData?.copilotToken) && !copilotToken)
+      (isRuntimeSecretReference(connection.apiKey) && !apiKey) ||
+      (isRuntimeSecretReference(connection.accessToken) && !accessToken) ||
+      (isRuntimeSecretReference(connection.refreshToken) && !refreshToken) ||
+      (isRuntimeSecretReference(connection.providerSpecificData?.copilotToken) && !copilotToken)
     ) {
       log.warn("AUTH", `${provider} account ${connection.id?.slice(0, 8) || "unknown"} has an unresolved secret reference`);
     }

@@ -37,7 +37,7 @@ async function testVercelRelay(relayUrl, timeoutMs = 10000) {
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-    const proxyPool = await getProxyPoolById(id);
+    const proxyPool = await getProxyPoolById(id, { hydrateSecrets: true });
 
     if (!proxyPool) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });

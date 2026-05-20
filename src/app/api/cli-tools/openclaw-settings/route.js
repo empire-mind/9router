@@ -20,6 +20,11 @@ const resolveAgentModel = (m) => {
 
 const getOpenClawDir = () => path.join(os.homedir(), ".openclaw");
 const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json");
+const NINE_ROUTER_API_KEY_REF = {
+  source: "exec",
+  provider: "onepassword",
+  id: "NINE_ROUTER_API_KEY",
+};
 
 // Check if openclaw CLI is installed (via which/where or config file exists)
 const checkOpenClawInstalled = async () => {
@@ -113,7 +118,7 @@ export async function GET() {
 }
 
 // Write per-agent models.json
-const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
+const writeAgentModels = async (agentDir, model, baseUrl) => {
   await fs.mkdir(agentDir, { recursive: true });
   const modelsPath = path.join(agentDir, "models.json");
   let existing = {};
@@ -125,7 +130,7 @@ const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
   if (!existing.providers) existing.providers = {};
   existing.providers["9router"] = {
     baseUrl,
-    apiKey: apiKey || "your_api_key",
+    apiKey: NINE_ROUTER_API_KEY_REF,
     api: "openai-completions",
     models: [{ id: model, name: model.split("/").pop() || model }],
   };
@@ -136,7 +141,7 @@ const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
 export async function POST(request) {
   try {
     // agentModels: { [agentId]: modelId } for per-agent override
-    const { baseUrl, apiKey, model, agentModels = {} } = await request.json();
+    const { baseUrl, model, agentModels = {} } = await request.json();
     
     if (!baseUrl || !model) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
@@ -195,7 +200,7 @@ export async function POST(request) {
     // Update models.providers.9router with all models
     settings.models.providers["9router"] = {
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "your_api_key",
+      apiKey: NINE_ROUTER_API_KEY_REF,
       api: "openai-completions",
       models: [...allModelIds].map((m) => ({ id: m, name: m.split("/").pop() || m })),
     };
@@ -214,7 +219,7 @@ export async function POST(request) {
           if (!agent.agentDir) return;
           const agentModel = agentModels[agent.id];
           const modelToWrite = agentModel || model; // fallback to default
-          await writeAgentModels(agent.agentDir, modelToWrite, normalizedBaseUrl, apiKey);
+          await writeAgentModels(agent.agentDir, modelToWrite, normalizedBaseUrl);
         })
       );
     }

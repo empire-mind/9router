@@ -5,6 +5,7 @@ import {
   getProxyPoolById,
   updateProxyPool,
 } from "@/models";
+import { isOnePasswordBridgeUnavailable } from "@/lib/secrets/onePasswordBridge";
 
 function normalizeProxyPoolUpdate(body = {}) {
   const updates = {};
@@ -49,6 +50,15 @@ function countBoundConnections(connections = [], proxyPoolId) {
   return connections.filter((connection) => connection?.providerSpecificData?.proxyPoolId === proxyPoolId).length;
 }
 
+function sanitizeProxyPool(pool) {
+  if (!pool) return pool;
+  return {
+    ...pool,
+    proxyUrl: undefined,
+    hasProxyUrl: !!pool.proxyUrl,
+  };
+}
+
 // GET /api/proxy-pools/[id] - Get proxy pool
 export async function GET(request, { params }) {
   try {
@@ -59,7 +69,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ proxyPool });
+    return NextResponse.json({ proxyPool: sanitizeProxyPool(proxyPool) });
   } catch (error) {
     console.log("Error fetching proxy pool:", error);
     return NextResponse.json({ error: "Failed to fetch proxy pool" }, { status: 500 });
@@ -84,9 +94,15 @@ export async function PUT(request, { params }) {
     }
 
     const updated = await updateProxyPool(id, normalized.updates);
-    return NextResponse.json({ proxyPool: updated });
+    return NextResponse.json({ proxyPool: sanitizeProxyPool(updated) });
   } catch (error) {
     console.log("Error updating proxy pool:", error);
+    if (isOnePasswordBridgeUnavailable(error)) {
+      return NextResponse.json(
+        { error: "1Password bridge is unavailable. Sign in to 1Password CLI and retry; the proxy secret was not saved to disk." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Failed to update proxy pool" }, { status: 500 });
   }
 }

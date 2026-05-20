@@ -331,7 +331,7 @@ const PROVIDER_MODELS_CONFIG = {
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    const connection = await getProviderConnectionById(id, { hydrateSecrets: true });
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });

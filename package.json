@@ -7,6 +7,8 @@
     "dev": "next dev --webpack --port 20128",
     "build": "next build --webpack",
     "start": "next start",
+    "secrets:audit": "node scripts/onepassword-secret-sync.cjs --audit",
+    "secrets:1password": "node scripts/onepassword-secret-sync.cjs --apply",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js"
