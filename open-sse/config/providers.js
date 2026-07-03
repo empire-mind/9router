@@ -124,6 +124,10 @@ export const PROVIDERS = {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     format: "openai"
   },
+  "vercel-ai-gateway": {
+    baseUrl: "https://ai-gateway.vercel.sh/v1/chat/completions",
+    format: "openai"
+  },
   glm: {
     baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
     format: "claude",
@@ -391,6 +395,8 @@ export const PROVIDERS = {
     baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
     format: "openai"
   },
+  // Region map for Xiaomi MiMo Token Plan (keys are cluster-specific)
+  // Used by resolveXiaomiTokenplanBaseUrl below
   // === Free-tier providers (synced from OmniRoute) ===
   // Claude-format with Claude CLI header spoofing (auth: x-api-key)
   agentrouter: { baseUrl: "https://agentrouter.org/v1/messages", format: "claude", headers: { ...CLAUDE_CLI_SPOOF_HEADERS } },
@@ -432,4 +438,16 @@ export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
 export function resolveOllamaLocalHost(credentials) {
   const raw = credentials?.providerSpecificData?.baseUrl?.trim();
   return (raw || OLLAMA_LOCAL_DEFAULT_HOST).replace(/\/$/, "");
+}
+
+export const XIAOMI_TOKENPLAN_REGIONS = {
+  sgp: "https://token-plan-sgp.xiaomimimo.com/v1",
+  cn: "https://token-plan-cn.xiaomimimo.com/v1",
+  ams: "https://token-plan-ams.xiaomimimo.com/v1"
+};
+export const XIAOMI_TOKENPLAN_DEFAULT_REGION = "sgp";
+
+export function resolveXiaomiTokenplanBaseUrl(credentials) {
+  const region = credentials?.providerSpecificData?.region;
+  return XIAOMI_TOKENPLAN_REGIONS[region] || XIAOMI_TOKENPLAN_REGIONS[XIAOMI_TOKENPLAN_DEFAULT_REGION];
 }
