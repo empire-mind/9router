@@ -3,10 +3,24 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { isSecretReference, resolveSecretValue } from "@/lib/secrets/onePassword";
+import { hydrateSecretForRuntime, isStoredSecretReference } from "@/lib/secrets/onePasswordBridge";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+function isRuntimeSecretReference(value) {
+  return isStoredSecretReference(value) || isSecretReference(value);
+}
+
+function resolveRuntimeSecret(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const hydrated = hydrateSecretForRuntime(value);
+  const resolved = resolveSecretValue(hydrated);
+  if (isRuntimeSecretReference(value) && isRuntimeSecretReference(resolved)) return null;
+  return resolved;
+}
 
 /**
  * Get provider credentials from localDb
@@ -48,6 +62,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           connectionNoProxy: resolvedProxy.connectionNoProxy,
           connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
           vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+          vercelRelayToken: resolvedProxy.vercelRelayToken || "",
         },
       };
     }
@@ -158,20 +173,35 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
+    const apiKey = resolveRuntimeSecret(connection.apiKey);
+    const accessToken = resolveRuntimeSecret(connection.accessToken);
+    const refreshToken = resolveRuntimeSecret(connection.refreshToken);
+    const copilotToken = resolveRuntimeSecret(connection.providerSpecificData?.copilotToken);
+    if (
+      (isRuntimeSecretReference(connection.apiKey) && !apiKey) ||
+      (isRuntimeSecretReference(connection.accessToken) && !accessToken) ||
+      (isRuntimeSecretReference(connection.refreshToken) && !refreshToken) ||
+      (isRuntimeSecretReference(connection.providerSpecificData?.copilotToken) && !copilotToken)
+    ) {
+      log.warn("AUTH", `${provider} account ${connection.id?.slice(0, 8) || "unknown"} has an unresolved secret reference`);
+    }
+
     return {
-      apiKey: connection.apiKey,
-      accessToken: connection.accessToken,
-      refreshToken: connection.refreshToken,
+      apiKey,
+      accessToken,
+      refreshToken,
       projectId: connection.projectId,
       connectionName: connection.displayName || connection.name || connection.email || connection.id,
-      copilotToken: connection.providerSpecificData?.copilotToken,
+      copilotToken,
       providerSpecificData: {
         ...(connection.providerSpecificData || {}),
+        ...(copilotToken ? { copilotToken } : {}),
         connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
         connectionProxyUrl: resolvedProxy.connectionProxyUrl,
         connectionNoProxy: resolvedProxy.connectionNoProxy,
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        vercelRelayToken: resolvedProxy.vercelRelayToken || "",
       },
       connectionId: connection.id,
       // Include current status for optimization check

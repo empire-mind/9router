@@ -109,7 +109,7 @@ export async function GET(request, { params }) {
 
 
     // Get connection from database
-    connection = await getProviderConnectionById(connectionId);
+    connection = await getProviderConnectionById(connectionId, { hydrateSecrets: true });
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
@@ -131,6 +131,7 @@ export async function GET(request, { params }) {
       connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
       connectionNoProxy: proxyConfig.connectionNoProxy || "",
       vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
+      vercelRelayToken: proxyConfig.vercelRelayToken || "",
       strictProxy: false,
     };
 

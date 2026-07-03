@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
-import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function OpenClawToolCard({
@@ -13,9 +12,7 @@ export default function OpenClawToolCard({
   onToggle,
   baseUrl,
   hasActiveProviders,
-  apiKeys,
   activeProviders,
-  cloudEnabled,
   initialStatus,
   tunnelEnabled,
   tunnelPublicUrl,
@@ -27,7 +24,6 @@ export default function OpenClawToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [agentModels, setAgentModels] = useState({}); // { [agentId]: modelId }
   const [agentModalFor, setAgentModalFor] = useState(null); // agentId opening modal
@@ -45,12 +41,6 @@ export default function OpenClawToolCard({
   };
 
   const configStatus = getConfigStatus();
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
     if (initialStatus) setOpenclawStatus(initialStatus);
@@ -81,9 +71,6 @@ export default function OpenClawToolCard({
       if (provider) {
         const primaryModel = openclawStatus.settings?.agents?.defaults?.model?.primary;
         if (primaryModel) setSelectedModel(primaryModel.replace("9router/", ""));
-        if (provider.apiKey && apiKeys?.some(k => k.key === provider.apiKey)) {
-          setSelectedApiKey(provider.apiKey);
-        }
       }
       // Init per-agent models from enriched agents list
       const agentList = openclawStatus.agents || [];
@@ -93,7 +80,7 @@ export default function OpenClawToolCard({
       });
       setAgentModels(initAgentModels);
     }
-  }, [openclawStatus, apiKeys]);
+  }, [openclawStatus]);
 
   const checkOpenclawStatus = async () => {
     setCheckingOpenclaw(true);
@@ -131,16 +118,11 @@ export default function OpenClawToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
-
       const res = await fetch("/api/cli-tools/openclaw-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
           model: selectedModel,
           agentModels,
         }),
@@ -168,7 +150,6 @@ export default function OpenClawToolCard({
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
         setSelectedModel("");
-        setSelectedApiKey("");
         checkOpenclawStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -191,10 +172,6 @@ export default function OpenClawToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
-
     const settingsContent = {
       agents: {
         defaults: {
@@ -207,7 +184,11 @@ export default function OpenClawToolCard({
         providers: {
           "9router": {
             baseUrl: getEffectiveBaseUrl(),
-            apiKey: keyToUse,
+            apiKey: {
+              source: "exec",
+              provider: "onepassword",
+              id: "NINE_ROUTER_API_KEY",
+            },
             api: "openai-completions",
             models: [
               {
@@ -306,11 +287,13 @@ export default function OpenClawToolCard({
                   </div>
                 )}
 
-                {/* API Key */}
+                {/* Secret Source */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Secret Source</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
+                  <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
+                    1Password/OpenClaw SecretRef: NINE_ROUTER_API_KEY
+                  </span>
                 </div>
 
                 {/* Default Model */}

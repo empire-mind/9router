@@ -1,17 +1,15 @@
 import crypto from "crypto";
+import { resolveSecretFromEnv } from "../../lib/secrets/onePassword.js";
 
-const API_KEY_SECRET = process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
+const API_KEY_SECRET = resolveSecretFromEnv(
+  "API_KEY_SECRET",
+  "OP_9ROUTER_API_KEY_SECRET_REF",
+  "ONEPASSWORD_9ROUTER_API_KEY_SECRET_REF",
+  "ONEPASSWORD_API_KEY_SECRET_REF"
+) || "endpoint-proxy-api-key-secret";
 
-/**
- * Generate 6-char random keyId
- */
 function generateKeyId() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+  return crypto.randomBytes(16).toString("hex");
 }
 
 /**
@@ -95,4 +93,3 @@ export function isNewFormatKey(apiKey) {
   const parsed = parseApiKey(apiKey);
   return parsed?.isNewFormat === true;
 }
-

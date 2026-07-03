@@ -1048,6 +1048,29 @@ pm2 save
 pm2 startup
 ```
 
+#### Secret references
+
+Runtime secrets can also be provided as secret references. Keep the reference
+in environment/config, and 9Router resolves it at runtime without writing the
+secret value to disk.
+
+```bash
+export JWT_SECRET="op://Shared/9router Studio Runtime/JWT_SECRET"
+export API_KEY_SECRET="gcp://9router-api-key-secret"
+export OPENROUTER_API_KEY="keychain://halvo-shared/OPENROUTER_API_KEY"
+export OP_CLI_PATH="$(command -v op)"
+```
+
+Supported reference formats:
+
+- `op://vault/item/field` resolves through the 1Password CLI.
+- `gcp://secret-name` resolves the latest GCP Secret Manager version.
+- `gcp://projects/project-id/secrets/secret-name/versions/latest` resolves a pinned project secret.
+- `keychain://service/account` reads macOS Keychain, trying System Keychain then login Keychain.
+
+Provider API key fields can also store these references; the router resolves
+them server-side before calling the upstream provider.
+
 ### Docker
 
 Published images (multi-platform `linux/amd64` + `linux/arm64`):

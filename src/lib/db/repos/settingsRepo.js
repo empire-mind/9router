@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { hydrateSecretForRuntime, vaultizeSecretForStorage } from "../../secrets/onePasswordBridge.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -38,6 +39,8 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
 };
 
+const SETTINGS_SECRET_FIELDS = ["oidcClientSecret", "outboundProxyUrl", "mitmSudoEncrypted"];
+
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
@@ -65,7 +68,11 @@ function mergeWithDefaults(raw) {
 
 export async function getSettings() {
   const raw = await readRaw();
-  return mergeWithDefaults(raw);
+  const settings = mergeWithDefaults(raw);
+  for (const field of SETTINGS_SECRET_FIELDS) {
+    if (settings[field]) settings[field] = hydrateSecretForRuntime(settings[field]);
+  }
+  return settings;
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
@@ -75,7 +82,19 @@ export async function updateSettings(updates) {
   db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
+    const storageUpdates = { ...updates };
+    for (const field of SETTINGS_SECRET_FIELDS) {
+      if (storageUpdates[field]) {
+        storageUpdates[field] = vaultizeSecretForStorage({
+          scope: "settings",
+          owner: { id: "settings", name: "local-settings", type: "settings" },
+          fieldPath: field,
+          value: storageUpdates[field],
+          existingRef: current[field],
+        });
+      }
+    }
+    next = { ...current, ...storageUpdates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)]

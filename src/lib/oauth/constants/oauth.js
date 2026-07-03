@@ -2,6 +2,7 @@
  * OAuth Configuration Constants
  */
 import { platform, arch } from "os";
+import { resolveSecretFromEnv } from "../../secrets/onePassword.js";
 
 /**
  * Get the platform enum value based on the current OS.
@@ -43,7 +44,12 @@ export const CODEX_CONFIG = {
 // Gemini (Google) OAuth Configuration (Standard OAuth2)
 export const GEMINI_CONFIG = {
   clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-  clientSecret: "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",
+  clientSecret: resolveSecretFromEnv(
+    "GEMINI_OAUTH_CLIENT_SECRET",
+    "OP_9ROUTER_GEMINI_OAUTH_CLIENT_SECRET_REF",
+    "ONEPASSWORD_9ROUTER_GEMINI_OAUTH_CLIENT_SECRET_REF",
+    "ONEPASSWORD_GEMINI_OAUTH_CLIENT_SECRET_REF"
+  ) || "",
   authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
   userInfoUrl: "https://www.googleapis.com/oauth2/v1/userinfo",
@@ -77,7 +83,12 @@ export const QODER_CONFIG = {
 // iFlow OAuth Configuration (Authorization Code)
 export const IFLOW_CONFIG = {
   clientId: "10009311001",
-  clientSecret: "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
+  clientSecret: resolveSecretFromEnv(
+    "IFLOW_OAUTH_CLIENT_SECRET",
+    "OP_9ROUTER_IFLOW_OAUTH_CLIENT_SECRET_REF",
+    "ONEPASSWORD_9ROUTER_IFLOW_OAUTH_CLIENT_SECRET_REF",
+    "ONEPASSWORD_IFLOW_OAUTH_CLIENT_SECRET_REF"
+  ) || "",
   authorizeUrl: "https://iflow.cn/oauth",
   tokenUrl: "https://iflow.cn/oauth/token",
   userInfoUrl: "https://iflow.cn/api/oauth/getUserInfo",
@@ -90,7 +101,12 @@ export const IFLOW_CONFIG = {
 // Antigravity OAuth Configuration (Standard OAuth2 with Google)
 export const ANTIGRAVITY_CONFIG = {
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-  clientSecret: "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",
+  clientSecret: resolveSecretFromEnv(
+    "ANTIGRAVITY_OAUTH_CLIENT_SECRET",
+    "OP_9ROUTER_ANTIGRAVITY_OAUTH_CLIENT_SECRET_REF",
+    "ONEPASSWORD_9ROUTER_ANTIGRAVITY_OAUTH_CLIENT_SECRET_REF",
+    "ONEPASSWORD_ANTIGRAVITY_OAUTH_CLIENT_SECRET_REF"
+  ) || "",
   authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
   userInfoUrl: "https://www.googleapis.com/oauth2/v1/userinfo",
@@ -108,8 +124,8 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  // String enum matches CLIProxyAPI Go source (internal/auth/antigravity/constants.go)
-  loadCodeAssistClientMetadata: JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
+  // Numeric enums matching Antigravity binary ClientMetadata (see getOAuthClientMetadata below)
+  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
 };
 
 /**
@@ -206,7 +222,12 @@ export const CURSOR_CONFIG = {
 
 // Kimi Coding OAuth Configuration (Device Code Flow)
 export const KIMI_CODING_CONFIG = {
-  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || "17e5f671-d194-4dfb-9706-5516cb48c098",
+  clientId: resolveSecretFromEnv(
+    "KIMI_CODING_OAUTH_CLIENT_ID",
+    "OP_9ROUTER_KIMI_CODING_OAUTH_CLIENT_ID_REF",
+    "ONEPASSWORD_9ROUTER_KIMI_CODING_OAUTH_CLIENT_ID_REF",
+    "ONEPASSWORD_KIMI_CODING_OAUTH_CLIENT_ID_REF"
+  ) || "",
   deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
   tokenUrl: "https://auth.kimi.com/api/oauth/token",
 };

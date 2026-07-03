@@ -239,6 +239,7 @@ const PROVIDER_MODELS_CONFIG = {
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
+  "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
 
   // Custom resolvers (non-OpenAI-shaped APIs / token-refresh flows)
   kiro: {
@@ -330,7 +331,7 @@ const PROVIDER_MODELS_CONFIG = {
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    const connection = await getProviderConnectionById(id, { hydrateSecrets: true });
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });

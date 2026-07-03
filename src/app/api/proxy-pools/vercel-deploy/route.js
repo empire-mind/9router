@@ -1,14 +1,44 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { randomBytes } from "node:crypto";
 
 const VERCEL_API = "https://api.vercel.com";
+const RELAY_ALLOWED_HOSTS = [
+  "api.openai.com",
+  "api.anthropic.com",
+  "api.deepseek.com",
+  "api.groq.com",
+  "api.mistral.ai",
+  "api.fireworks.ai",
+  "api.cohere.ai",
+  "api.together.xyz",
+  "generativelanguage.googleapis.com",
+  "api.minimax.io",
+  "api.minimaxi.com",
+  "api.deepgram.com",
+  "api.elevenlabs.io",
+  "api.inworld.ai",
+  "openrouter.ai",
+];
 
 // Relay function source code deployed to Vercel
 // Forwards requests to target URL specified in x-relay-target header
-const RELAY_FUNCTION_CODE = `
+function buildRelayFunctionCode(relayToken) {
+  return `
 export const config = { runtime: "edge" };
 
+const RELAY_TOKEN = ${JSON.stringify(relayToken)};
+const ALLOWED_HOSTS = new Set(${JSON.stringify(RELAY_ALLOWED_HOSTS)});
+const PRIVATE_HOST_RE = /^(localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.|172\\.(1[6-9]|2\\d|3[01])\\.|0\\.|::1$|\\[::1\\]$)/i;
+
 export default async function handler(req) {
+  if (req.headers.get("x-relay-token") !== RELAY_TOKEN) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const target = req.headers.get("x-relay-target");
   const relayPath = req.headers.get("x-relay-path") || "/";
   if (!target) {
@@ -18,11 +48,24 @@ export default async function handler(req) {
     });
   }
 
-  const targetUrl = target.replace(/\\/$/, "") + relayPath;
+  let targetUrl;
+  try {
+    const parsed = new URL(target.replace(/\\/$/, "") + relayPath);
+    if (parsed.protocol !== "https:") throw new Error("Only https targets are allowed");
+    if (PRIVATE_HOST_RE.test(parsed.hostname)) throw new Error("Private targets are blocked");
+    if (!ALLOWED_HOSTS.has(parsed.hostname)) throw new Error("Target host is not allowed");
+    targetUrl = parsed.toString();
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message || "Invalid target" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const headers = new Headers(req.headers);
   headers.delete("x-relay-target");
   headers.delete("x-relay-path");
+  headers.delete("x-relay-token");
   headers.delete("host");
 
   const response = await fetch(targetUrl, {
@@ -38,6 +81,7 @@ export default async function handler(req) {
   });
 }
 `;
+}
 
 async function pollDeployment(deploymentId, token, maxMs = 120000) {
   const start = Date.now();
@@ -65,6 +109,7 @@ export async function POST(request) {
     if (!vercelToken) {
       return NextResponse.json({ error: "Vercel API token is required" }, { status: 400 });
     }
+    const relayToken = randomBytes(32).toString("base64url");
 
     // Deploy relay function to Vercel
     const deployRes = await fetch(`${VERCEL_API}/v13/deployments`, {
@@ -78,7 +123,7 @@ export async function POST(request) {
         files: [
           {
             file: "api/relay.js",
-            data: RELAY_FUNCTION_CODE,
+            data: buildRelayFunctionCode(relayToken),
           },
           {
             file: "package.json",
@@ -128,13 +173,23 @@ export async function POST(request) {
     const proxyPool = await createProxyPool({
       name: projectName,
       proxyUrl: deployUrl,
+      relayToken,
       type: "vercel",
       noProxy: "",
       isActive: true,
       strictProxy: false,
     });
 
-    return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });
+    return NextResponse.json({
+      proxyPool: {
+        ...proxyPool,
+        proxyUrl: undefined,
+        relayToken: undefined,
+        hasProxyUrl: true,
+        relayTokenConfigured: true,
+      },
+      deployUrl,
+    }, { status: 201 });
   } catch (error) {
     console.log("Error deploying Vercel relay:", error);
     return NextResponse.json({ error: error.message || "Deploy failed" }, { status: 500 });

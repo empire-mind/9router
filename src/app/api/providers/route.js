@@ -9,8 +9,28 @@ import {
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { isOnePasswordBridgeUnavailable } from "@/lib/secrets/onePasswordBridge";
 
 export const dynamic = "force-dynamic";
+
+const SENSITIVE_PROVIDER_SPECIFIC_FIELDS = [
+  "copilotToken",
+  "sessionToken",
+  "ssoToken",
+  "connectionProxyUrl",
+];
+
+function sanitizeProviderSpecificData(providerSpecificData) {
+  if (!providerSpecificData || typeof providerSpecificData !== "object") return providerSpecificData;
+  const safe = { ...providerSpecificData };
+  for (const field of SENSITIVE_PROVIDER_SPECIFIC_FIELDS) {
+    if (safe[field] !== undefined) {
+      safe[field] = undefined;
+      safe[`${field}Set`] = true;
+    }
+  }
+  return safe;
+}
 
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
@@ -73,6 +93,7 @@ export async function GET() {
         accessToken: undefined,
         refreshToken: undefined,
         idToken: undefined,
+        providerSpecificData: sanitizeProviderSpecificData(c.providerSpecificData),
       };
     });
 
@@ -182,10 +203,17 @@ export async function POST(request) {
     // Hide sensitive fields
     const result = { ...newConnection };
     delete result.apiKey;
+    result.providerSpecificData = sanitizeProviderSpecificData(result.providerSpecificData);
 
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
     console.log("Error creating provider:", error);
+    if (isOnePasswordBridgeUnavailable(error)) {
+      return NextResponse.json(
+        { error: "1Password bridge is unavailable. Sign in to 1Password CLI and retry; the provider was not saved to disk." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
   }
 }

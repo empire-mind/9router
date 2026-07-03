@@ -8,6 +8,7 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
+import { hydrateConnectionSecretsForRuntime } from "@/lib/secrets/onePasswordBridge";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -60,10 +61,11 @@ function inferKindFromUnknownModelId(modelId) {
 }
 
 async function fetchCompatibleModelIds(connection) {
-  if (!connection?.apiKey) return [];
+  const runtimeConnection = hydrateConnectionSecretsForRuntime(connection);
+  if (typeof runtimeConnection?.apiKey !== "string" || !runtimeConnection.apiKey.trim()) return [];
 
-  const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
-    ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
+  const baseUrl = typeof runtimeConnection?.providerSpecificData?.baseUrl === "string"
+    ? runtimeConnection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
     : "";
 
   if (!baseUrl) return [];
@@ -73,17 +75,17 @@ async function fetchCompatibleModelIds(connection) {
     "Content-Type": "application/json",
   };
 
-  if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-  } else if (isAnthropicCompatibleProvider(connection.provider)) {
+  if (isOpenAICompatibleProvider(runtimeConnection.provider)) {
+    headers.Authorization = `Bearer ${runtimeConnection.apiKey}`;
+  } else if (isAnthropicCompatibleProvider(runtimeConnection.provider)) {
     if (url.endsWith("/messages/models")) {
       url = url.slice(0, -9);
     } else if (url.endsWith("/messages")) {
       url = `${url.slice(0, -9)}/models`;
     }
-    headers["x-api-key"] = connection.apiKey;
+    headers["x-api-key"] = runtimeConnection.apiKey;
     headers["anthropic-version"] = "2023-06-01";
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    headers.Authorization = `Bearer ${runtimeConnection.apiKey}`;
   } else {
     return [];
   }
@@ -140,7 +142,7 @@ function comboMatchesKinds(combo, kindFilter) {
 export async function buildModelsList(kindFilter) {
   let connections = [];
   try {
-    connections = await getProviderConnections();
+    connections = await getProviderConnections({ hydrateSecrets: false });
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
@@ -275,7 +277,7 @@ export async function buildModelsList(kindFilter) {
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
-          const live = await liveResolver(conn);
+          const live = await liveResolver(hydrateConnectionSecretsForRuntime(conn));
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
           }

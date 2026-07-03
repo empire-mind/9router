@@ -12,7 +12,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider: "inworld", isActive: true });
+    const connections = await getProviderConnections({ provider: "inworld", isActive: true, hydrateSecrets: true });
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) return NextResponse.json({ error: "No Inworld connection found" }, { status: 400 });
 

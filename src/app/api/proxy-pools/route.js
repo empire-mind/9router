@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool, getProviderConnections, getProxyPools } from "@/models";
+import { isOnePasswordBridgeUnavailable } from "@/lib/secrets/onePasswordBridge";
 
 function toBoolean(value) {
   if (value === "true") return true;
@@ -8,6 +9,17 @@ function toBoolean(value) {
 }
 
 const VALID_PROXY_TYPES = ["http", "vercel"];
+
+function sanitizeProxyPool(pool) {
+  if (!pool) return pool;
+  return {
+    ...pool,
+    proxyUrl: undefined,
+    relayToken: undefined,
+    hasProxyUrl: !!pool.proxyUrl,
+    relayTokenConfigured: !!pool.relayToken,
+  };
+}
 
 function normalizeProxyPoolInput(body = {}) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -56,7 +68,7 @@ export async function GET(request) {
     const proxyPools = await getProxyPools(filter);
 
     if (!includeUsage) {
-      return NextResponse.json({ proxyPools });
+      return NextResponse.json({ proxyPools: proxyPools.map(sanitizeProxyPool) });
     }
 
     const connections = await getProviderConnections();
@@ -67,7 +79,7 @@ export async function GET(request) {
       boundConnectionCount: usageMap.get(pool.id) || 0,
     }));
 
-    return NextResponse.json({ proxyPools: enrichedProxyPools });
+    return NextResponse.json({ proxyPools: enrichedProxyPools.map(sanitizeProxyPool) });
   } catch (error) {
     console.log("Error fetching proxy pools:", error);
     return NextResponse.json({ error: "Failed to fetch proxy pools" }, { status: 500 });
@@ -85,9 +97,15 @@ export async function POST(request) {
     }
 
     const proxyPool = await createProxyPool(normalized);
-    return NextResponse.json({ proxyPool }, { status: 201 });
+    return NextResponse.json({ proxyPool: sanitizeProxyPool(proxyPool) }, { status: 201 });
   } catch (error) {
     console.log("Error creating proxy pool:", error);
+    if (isOnePasswordBridgeUnavailable(error)) {
+      return NextResponse.json(
+        { error: "1Password bridge is unavailable. Sign in to 1Password CLI and retry; the proxy secret was not saved to disk." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Failed to create proxy pool" }, { status: 500 });
   }
 }

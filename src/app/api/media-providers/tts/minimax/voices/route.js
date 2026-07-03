@@ -69,7 +69,7 @@ export async function GET(request) {
     const voiceType = searchParams.get("voice_type") || "all";
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider, isActive: true });
+    const connections = await getProviderConnections({ provider, isActive: true, hydrateSecrets: true });
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) {
       return NextResponse.json({ error: `No ${provider} connection found` }, { status: 400 });

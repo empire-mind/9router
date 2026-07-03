@@ -1,9 +1,15 @@
 import { getProxyPoolById } from "@/models";
+import { hydrateSecretForRuntime } from "@/lib/secrets/onePasswordBridge";
 
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+}
+
+function normalizeSecretString(value) {
+  const hydrated = hydrateSecretForRuntime(value);
+  return typeof hydrated === "string" ? hydrated.trim() : "";
 }
 
 /**
@@ -13,7 +19,7 @@ function normalizeLegacyProxy(providerSpecificData = {}) {
   const connectionProxyEnabled =
     providerSpecificData?.connectionProxyEnabled === true;
 
-  const connectionProxyUrl = normalizeString(
+  const connectionProxyUrl = normalizeSecretString(
     providerSpecificData?.connectionProxyUrl
   );
 
@@ -56,9 +62,9 @@ export async function resolveConnectionProxyConfig(
      * -----------------------------
      */
     if (proxyPoolId) {
-      const proxyPool = await getProxyPoolById(proxyPoolId);
+      const proxyPool = await getProxyPoolById(proxyPoolId, { hydrateSecrets: true });
 
-      const proxyUrl = normalizeString(proxyPool?.proxyUrl);
+      const proxyUrl = normalizeSecretString(proxyPool?.proxyUrl);
       const noProxy = normalizeString(proxyPool?.noProxy);
 
       const isValidPool =
@@ -85,6 +91,7 @@ export async function resolveConnectionProxyConfig(
             strictProxy: proxyPool.strictProxy === true,
 
             vercelRelayUrl: proxyUrl,
+            vercelRelayToken: normalizeSecretString(proxyPool?.relayToken),
           };
         }
 

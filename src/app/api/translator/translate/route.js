@@ -6,6 +6,17 @@ import { parseModel } from "open-sse/services/model.js";
 import { getProviderConnections } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/executors/index.js";
 
+const SENSITIVE_HEADER_RE = /^(authorization|proxy-authorization|x-api-key|api-key|anthropic-api-key|cookie|set-cookie)$/i;
+
+function redactHeaders(headers = {}) {
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [
+      key,
+      SENSITIVE_HEADER_RE.test(key) ? "<redacted>" : value,
+    ])
+  );
+}
+
 export async function POST(request) {
   try {
     const { step, body } = await request.json();
@@ -57,7 +68,7 @@ export async function POST(request) {
         delete translated._toolNameMap;
 
         // Build URL + headers via executor (same as chatCore → executor.execute)
-        const connections = await getProviderConnections({ provider });
+        const connections = await getProviderConnections({ provider, hydrateSecrets: true });
         const connection = connections.find(c => c.isActive !== false);
         if (!connection) {
           return NextResponse.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });
@@ -77,7 +88,7 @@ export async function POST(request) {
         const headers = executor.buildHeaders(credentials, stream);
         const finalBody = executor.transformRequest(model, translated, stream, credentials);
 
-        return NextResponse.json({ success: true, result: { url, headers, body: finalBody } });
+        return NextResponse.json({ success: true, result: { url, headers: redactHeaders(headers), body: finalBody } });
       }
 
       default:

@@ -321,6 +321,7 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
     return proxyAwareFetch(url, options, {
       vercelRelayUrl: effectiveProxy.vercelRelayUrl,
+      vercelRelayToken: effectiveProxy.vercelRelayToken || "",
     });
   }
 
@@ -397,6 +398,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "openai": {
         const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "vercel-ai-gateway": {
+        const res = await fetchWithConnectionProxy("https://ai-gateway.vercel.sh/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "anthropic": {
@@ -605,7 +610,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
  * Test a single connection by ID, update DB, and return result.
  */
 export async function testSingleConnection(id) {
-  const connection = await getProviderConnectionById(id);
+  const connection = await getProviderConnectionById(id, { hydrateSecrets: true });
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
